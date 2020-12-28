@@ -1,4 +1,5 @@
 from vpython import *
+import argparse
 import numpy as np
 from tqdm import tqdm
 import time
@@ -14,9 +15,6 @@ def radians(degrees):
 
 def degrees(radians):
     return radians*(180/np.pi)
-
-def ang_momentum(r, m, v):
-    return np.cross(r, [m*v[0], m*v[1], m*v[2]])
 
 def perp_vector(vector, normalize):
     c1 = np.random.randint(-100, 100)
@@ -40,8 +38,8 @@ def hitbox(obj1, obj2):
     else:
         return False
 
-def collision(obj1, obj2):
-    new_obj = Body(len(world_history),0,0,0)
+def collision(obj1, obj2, new_ID):
+    new_obj = Body(new_ID,0,0,0)
     new_obj.mass = obj1.mass + obj2.mass
     new_obj.size = (((obj1.size**3)+(obj2.size**3))**(1/3))*0.75
 
@@ -55,12 +53,6 @@ def collision(obj1, obj2):
     new_vel_dir = [old_vel_sum[0]/old_vel_sum_mag, old_vel_sum[1]/old_vel_sum_mag, old_vel_sum[2]/old_vel_sum_mag]
     new_obj.velocity = [new_vel_dir[0]*new_vel_mag, new_vel_dir[1]*new_vel_mag, new_vel_dir[2]*new_vel_mag]
 
-    if visual:
-        Vbody = sphere(radius=body.size,color=color.blue)
-        Vbody.pos = vector(new_obj.pos[0], new_obj.pos[1], new_obj.pos[2])
-        visual_bodies.append(Vbody)
-        
-    
     obj1.alive = False
     obj2.alive = False
     return new_obj
@@ -87,123 +79,183 @@ class Body:
         self.pos = [self.r*np.cos(self.theta)*np.sin(self.phi), self.r*np.sin(self.theta)*np.sin(self.phi), self.r*np.cos(self.phi)]
         self.velocity = []
         self.mass = 1
-        self.size = 2
+        self.size = 1
         return
 
     def put_in_orbit(self, orbiting):
 
         vel_mag = ((G*orbiting.mass)/mag(rel_pos(self, orbiting)))**0.5
         direction = perp_vector(rel_pos(self, orbiting), True)
-        body.velocity = [direction[0]*vel_mag, direction[1]*vel_mag, direction[2]*vel_mag]
+        self.velocity = [direction[0]*vel_mag, direction[1]*vel_mag, direction[2]*vel_mag]
 
         return
 
- 
-global visual
-visual = False
-global G
-G = 0.08
+def initialize(G, sun_size, sun_mass, p_size, p_mass, p_start, p_end, particle_num, output_name):
 
-if visual:
-    scene.width = 2000
-    scene.height = 1000
-    scene.range = 400
+    bodies = []
+    world_history = []
 
-# Initialize
-sun = Body("s",0, 0, 0)
-sun.pos = [0, 0, 0]
-sun.mass = 100000
-sun.size = 20
-ini_sun_size = sun.size
-if visual:
-    Vsun = sphere(pos=vector(0,0,0),radius=sun.size,color=color.yellow)
+    sun = Body("s",0, 0, 0)
+    sun.pos = [0, 0, 0]
+    sun.mass = sun_mass
+    sun.size = sun_size
 
-bodies = []
-world_history = []
-visual_bodies = []
+    print('Initializing simulation...')
 
-print('Initializing simulation...')
-r = 150
-while r < 200:
-    ini_theta = np.random.randint(0,359)
-    theta = ini_theta
-    while theta < 360 + ini_theta:
-        ini_phi = np.random.randint(0,359)
-        phi = ini_phi
-        while phi < 360 + ini_phi:
-            body = Body(len(world_history), r, theta, phi)
-            body.put_in_orbit(sun)
-            safe = True
-            for other in bodies:
-                if hitbox(body, other):
-                    safe = False
-            if safe:
-                bodies.append(body)
-                world_history.append([body.size, [body.pos]])
-                
-                if visual:
-                    Vbody = sphere(radius=body.size,color=color.blue)
-                    Vbody.pos = vector(body.pos[0], body.pos[1], body.pos[2])
-                    visual_bodies.append(Vbody)
-            
-            phi += degrees(((bodies[0].size*2)+50)/r)
-        theta += degrees(((bodies[0].size*2)+50)/r)
-    r += (bodies[0].size*2)+50
- 
-print('Initialization complete. Simulation contains',len(bodies),'particles.')
-print('')
-print('Simulating...')
+    positions = []
 
-# Update and draw
-sim_duration = 2000
-for t in tqdm(range(sim_duration)):
+    for i in range(particle_num):
+        positions.append([np.random.randint(p_start, p_end), np.random.randint(0,500), np.random.randint(0,1000)])
 
-    for i in range(len(bodies)):
-        body = bodies[i]
-        if hitbox(body, sun):
-            body.alive = False
-            sun.mass += body.mass
-                
-        if body.alive:
-            a_net = [0, 0, 0]
-            for j in range(len(bodies)):
-                other = bodies[j]
-                if i != j and other.alive:
-                    if hitbox(body, other):
-                        new_obj = collision(body, other)
-                        bodies.append(new_obj)
-                        world_history.append([new_obj.size, [None for q in range(t+1)]])
-                    else:
-                        a = gravitate(body, other)
-                        a_net[0] += a[0]
-                        a_net[1] += a[1]
-                        a_net[2] += a[2]
-            a_sun = gravitate(body, sun)
-            a_net[0] += a_sun[0]
-            a_net[1] += a_sun[1]
-            a_net[2] += a_sun[2]
-            update_vecs(body, a_net)
+    for p in tqdm(positions):
+        body = Body(len(world_history), p[0], p[1], p[2])
+        body.mass = p_mass
+        body.size = p_size
+        body.put_in_orbit(sun)
+        safe = True
+        for other in bodies:
+            if hitbox(body, other):
+                safe = False
+                break
+        if safe:
+            bodies.append(body)
+            world_history.append([body.size, [body.pos]])
 
-    i = 0
-    while i < len(bodies):
-        body = bodies[i]
-        if not body.alive:
-            while len(world_history[body.ID][1]) < sim_duration+1:
-                world_history[body.ID][1].append(None)
-                
-            if visual:
-                visual_bodies[i].visible = False
-                
-        else:
-            world_history[body.ID][1].append([body.pos[0], body.pos[1], body.pos[2]])
-            
-            if visual:
-                visual_bodies[i].pos = vector(body.pos[0], body.pos[1], body.pos[2])
-            
-        i += 1
-     
-    #time.sleep(0.01)
+    bodies.append(sun)
+    output = [bodies, world_history, G]
+    np.save(output_name+"_setup", np.asarray(output, dtype=object))
 
-print('Done!')
-world_history.append([ini_sun_size, scene.width, scene.height, scene.range])
-np.save("history", np.asarray(world_history, dtype=object))
+    return output
+
+def simulate(input_file, sim_duration, output_name):
+
+    input = np.load(input_file, allow_pickle=True)
+
+    bodies = input[0]
+    sun = bodies[-1]
+    bodies = [bodies[i] for i in range(len(bodies)-1)]
+    world_history = input[1]
+    G = input[2]
+
+    print('Simulating...')
+    save_times = [int(np.floor((sim_duration/10)*i)) for i in range(1,10)]
+    for t in tqdm(range(sim_duration)):
+
+        for i in range(len(bodies)):
+            body = bodies[i]
+            if hitbox(body, sun):
+                body.alive = False
+                sun.mass += body.mass
+
+            if body.alive:
+                a_net = [0, 0, 0]
+                for j in range(len(bodies)):
+                    other = bodies[j]
+                    if i != j and other.alive:
+                        if hitbox(body, other):
+                            new_obj = collision(body, other, len(world_history))
+                            bodies.append(new_obj)
+                            world_history.append([new_obj.size, [None for q in range(t+1)]])
+                        else:
+                            a = gravitate(body, other)
+                            a_net[0] += a[0]
+                            a_net[1] += a[1]
+                            a_net[2] += a[2]
+                a_sun = gravitate(body, sun)
+                a_net[0] += a_sun[0]
+                a_net[1] += a_sun[1]
+                a_net[2] += a_sun[2]
+                update_vecs(body, a_net)
+
+        i = 0
+        while i < len(bodies):
+            body = bodies[i]
+            if not body.alive:
+                while len(world_history[body.ID][1]) < sim_duration+1:
+                    world_history[body.ID][1].append(None)
+            else:
+                world_history[body.ID][1].append([body.pos[0], body.pos[1], body.pos[2]])
+            i += 1
+
+        if t in save_times:
+            np.save("simulation"+"_sim", np.asarray([world_history, sun.size], dtype=object))
+
+    np.save(output_name+"_sim", np.asarray([world_history, sun.size], dtype=object))
+
+    return [world_history, sun.size]
+
+def play(input_file):
+
+    input = np.load(input_file, allow_pickle=True)
+
+    data = input[0]
+    sun_size = input[1]
+
+    scene.autoscale = True
+    Vsun = sphere(pos=vector(0,0,0),radius=sun_size,color=color.yellow)
+    visual_bodies = []
+
+    for i in range(len(data)):
+        visual_bodies.append(sphere(radius=data[0][0],color=color.blue,visible=False))
+
+    while True:
+        for t in range(len(data[0][1])):
+            scene.caption=("Time: ",t)
+            for i in range(len(data)):
+                if data[i][1][t] != None:
+                    visual_bodies[i].visible = True
+                    visual_bodies[i].pos = vector(data[i][1][t][0], data[i][1][t][1], data[i][1][t][2])
+                    visual_bodies[i].radius = data[i][0]
+                else:
+                    visual_bodies[i].visible = False
+            time.sleep(0.1)
+
+    return
+
+parser = argparse.ArgumentParser()
+parser.add_argument('mode', choices=['setup','simulate','play'], help='choose from the following modes: setup, simulate, or play.')
+args = parser.parse_args()
+mode = args.mode
+
+if mode == 'setup':
+    custom = input('Would you like to use custom settings (yes or no)? ')
+    if custom == 'yes':
+        G = float(input('gravitational constant (default=0.08): '))
+        sun_size = float(input('sun radius (default=20): '))
+        sun_mass = float(input('sun mass (default=100000): '))
+        p_size = float(input('paricle radius (default=2) '))
+        p_mass = float(input('particle mass (default=1) '))
+        p_start = int(input('starting radius for particles (default=150): '))
+        p_end = int(input('ending radius for particles (default=201): '))
+        particle_num = float(input('number of particles (default=500): '))
+    elif custom == 'no':
+        G = 0.008
+        sun_size = 20
+        sun_mass = 100000
+        p_size = 2
+        p_mass = 1
+        p_start = 150
+        p_end = 201
+        particle_num = 500
+    output_name = input('output file name: ')
+    data = initialize(G, sun_size, sun_mass, p_size, p_mass, p_start, p_end, particle_num, output_name)
+    print('initilization complete.')
+    view = input('would you like to view the initial conditions (yes or no)? ')
+    if view == 'yes':
+        for i in range(len(data[0])-1):
+            body = data[0][i]
+            Vbody = sphere(radius=body.size,color=color.blue)
+            Vbody.pos = vector(body.pos[0], body.pos[1], body.pos[2])
+        Vsun = sphere(pos=vector(0,0,0),radius=sun_size,color=color.yellow)
+
+elif mode == 'simulate':
+    input_file = input('setup file: ')
+    G = np.load(input_file, allow_pickle=True)[2]
+    sim_duration = int(input('number of iterations in simulation: '))
+    output_name = input('output file name: ')
+    simulate(input_file, sim_duration, output_name)
+    print('simulation complete.')
+
+elif mode == 'play':
+    input_file = input('simulation file: ')
+    play(input_file)
